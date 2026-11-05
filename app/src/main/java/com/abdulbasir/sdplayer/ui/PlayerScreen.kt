@@ -2,6 +2,7 @@ package com.abdulbasir.sdplayer.ui
 
 import android.content.Context
 import android.media.AudioManager
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,6 +12,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +41,9 @@ import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
@@ -51,6 +58,7 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -65,6 +73,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,7 +85,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -89,6 +100,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import com.abdulbasir.sdplayer.data.PlayerSettings
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.util.Locale
@@ -108,6 +120,7 @@ private class PlayerUiState(private val player: Player) : Player.Listener {
     var hasNext by mutableStateOf(false)
     var hasPrevious by mutableStateOf(false)
     var revision by mutableIntStateOf(0)
+    var isLocal by mutableStateOf(false)
 
     init {
         sync()
@@ -128,6 +141,7 @@ private class PlayerUiState(private val player: Player) : Player.Listener {
         tracks = player.currentTracks
         hasNext = player.hasNextMediaItem()
         hasPrevious = player.hasPreviousMediaItem()
+        isLocal = player.currentMediaItem?.mediaId?.toLongOrNull() != null
         revision++
         refreshPosition()
     }
@@ -138,7 +152,15 @@ private class PlayerUiState(private val player: Player) : Player.Listener {
 }
 
 /** The little message in the middle of the screen while you swipe or double tap. */
+private data class MoreItem(val label: String, val action: () -> Unit)
+
 private data class Hud(val icon: ImageVector?, val text: String, val progress: Float? = null)
+
+private val SUBTITLE_FRACTIONS = floatArrayOf(0.04f, 0.0533f, 0.07f, 0.09f)
+private val SUBTITLE_LABELS = listOf("Small", "Medium", "Large", "Huge")
+private val SLEEP_CHOICES = listOf(0, 15, 30, 45, 60, 90)
+private val BOOST_GAINS = intArrayOf(0, 600, 1000, 1500)
+private val BOOST_LABELS = listOf("Off", "+3 dB", "+5 dB", "+8 dB")
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 
@@ -152,6 +174,11 @@ private enum class FitMode(val label: String, val mode: Int) {
 fun PlayerScreen(
     player: Player,
     inPip: Boolean,
+    settings: PlayerSettings,
+    audioSessionId: () -> Int,
+    fileInfo: () -> List<Pair<String, String>>,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
     onBack: () -> Unit,
     onPip: () -> Unit,
     onRotate: () -> Unit,
@@ -165,10 +192,15 @@ fun PlayerScreen(
         player.addListener(state)
         onDispose { player.removeListener(state) }
     }
+    var abA by remember { mutableStateOf<Long?>(null) }
+    var abB by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(player) {
         while (true) {
             state.refreshPosition()
-            kotlinx.coroutines.delay(250)
+            val a = abA
+            val b = abB
+            if (a != null && b != null && player.currentPosition >= b) player.seekTo(a)
+            kotlinx.coroutines.delay(if (b != null) 100L else 250L)
         }
     }
 
@@ -178,6 +210,33 @@ fun PlayerScreen(
     var fit by remember { mutableStateOf(FitMode.Fit) }
     var hud by remember { mutableStateOf<Hud?>(null) }
     var showTracks by remember { mutableStateOf(false) }
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var sleepMinutes by remember { mutableIntStateOf(0) }
+    var showSleep by remember { mutableStateOf(false) }
+    var showInfo by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var boost by remember { mutableIntStateOf(0) }
+    var subtitleSize by remember { mutableIntStateOf(settings.subtitleSize.coerceIn(0, 3)) }
+    var enhancer by remember { mutableStateOf<LoudnessEnhancer?>(null) }
+    val seekStep = settings.seekStepSec * 1000L
+
+    LaunchedEffect(sleepMinutes) {
+        if (sleepMinutes > 0) {
+            kotlinx.coroutines.delay(sleepMinutes * 60_000L)
+            player.pause()
+            sleepMinutes = 0
+            hud = Hud(null, "Sleep timer: paused")
+        }
+    }
+    DisposableEffect(player) {
+        onDispose {
+            try {
+                enhancer?.release()
+            } catch (e: Exception) {
+                // Already released.
+            }
+        }
+    }
 
     LaunchedEffect(controlsVisible, state.isPlaying, interaction, showTracks) {
         if (controlsVisible && state.isPlaying && !showTracks) {
@@ -217,8 +276,16 @@ fun PlayerScreen(
                     keepScreenOn = true
                 }
             },
-            update = { it.resizeMode = fit.mode },
-            modifier = Modifier.fillMaxSize(),
+            update = {
+                it.resizeMode = fit.mode
+                it.subtitleView?.setFractionalTextSize(SUBTITLE_FRACTIONS[subtitleSize])
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = zoom
+                    scaleY = zoom
+                },
         )
 
         if (!inPip) {
@@ -226,6 +293,25 @@ fun PlayerScreen(
             Box(
                 Modifier
                     .fillMaxSize()
+                    .pointerInput(locked) {
+                        if (locked) return@pointerInput
+                        // Pinch with two fingers to zoom. This runs first and takes the touches,
+                        // so the swipe gestures below don't fire while pinching.
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                if (event.changes.size >= 2) {
+                                    val change = event.calculateZoom()
+                                    if (change != 1f) {
+                                        zoom = (zoom * change).coerceIn(1f, 4f)
+                                        hud = Hud(Icons.Rounded.AspectRatio, "Zoom ${(zoom * 100).roundToInt()}%")
+                                    }
+                                    event.changes.forEach { it.consume() }
+                                }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
                     .pointerInput(locked) {
                         detectTapGestures(
                             onTap = {
@@ -235,18 +321,18 @@ fun PlayerScreen(
                             onDoubleTap = { offset ->
                                 if (!locked) {
                                     if (offset.x < size.width / 2f) {
-                                        seekBy(-10_000L)
-                                        hud = Hud(Icons.Rounded.Replay10, "-10 s")
+                                        seekBy(-seekStep)
+                                        hud = Hud(Icons.Rounded.Replay, "-${settings.seekStepSec} s")
                                     } else {
-                                        seekBy(10_000L)
-                                        hud = Hud(Icons.Rounded.Forward10, "+10 s")
+                                        seekBy(seekStep)
+                                        hud = Hud(Icons.Rounded.FastForward, "+${settings.seekStepSec} s")
                                     }
                                 }
                             },
                         )
                     }
-                    .pointerInput(locked) {
-                        if (locked) return@pointerInput
+                    .pointerInput(locked, settings.gestures) {
+                        if (locked || !settings.gestures) return@pointerInput
                         var mode = 0 // 0 undecided, 1 seek, 2 brightness, 3 volume
                         var startX = 0f
                         var totalX = 0f
@@ -357,6 +443,7 @@ fun PlayerScreen(
                         onFit = {
                             val next = FitMode.entries[(fit.ordinal + 1) % FitMode.entries.size]
                             fit = next
+                            zoom = 1f
                             hud = Hud(Icons.Rounded.AspectRatio, next.label)
                         },
                         onSpeed = { speed ->
@@ -371,6 +458,68 @@ fun PlayerScreen(
                             player.seekTo(target)
                         },
                         onSeekBy = { seekBy(it) },
+                        seekStepSec = settings.seekStepSec,
+                        moreItems = buildList {
+                            add(
+                                MoreItem(if (sleepMinutes > 0) "Sleep timer ($sleepMinutes min)" else "Sleep timer") {
+                                    showSleep = true
+                                },
+                            )
+                            add(
+                                MoreItem(
+                                    when {
+                                        abA == null -> "A-B repeat: set start (A)"
+                                        abB == null -> "A-B repeat: set end (B)"
+                                        else -> "A-B repeat: clear"
+                                    },
+                                ) {
+                                    when {
+                                        abA == null -> {
+                                            abA = player.currentPosition
+                                            hud = Hud(null, "A set at ${formatTime(abA ?: 0L)}")
+                                        }
+                                        abB == null -> {
+                                            val start = abA ?: 0L
+                                            if (player.currentPosition > start + 500L) {
+                                                abB = player.currentPosition
+                                                hud = Hud(null, "Repeating A-B")
+                                            } else {
+                                                hud = Hud(null, "Pick B after A")
+                                            }
+                                        }
+                                        else -> {
+                                            abA = null
+                                            abB = null
+                                            hud = Hud(null, "A-B repeat off")
+                                        }
+                                    }
+                                },
+                            )
+                            add(
+                                MoreItem("Audio boost: ${BOOST_LABELS[boost]}") {
+                                    val next = (boost + 1) % BOOST_LABELS.size
+                                    try {
+                                        val e = enhancer ?: LoudnessEnhancer(audioSessionId()).also { enhancer = it }
+                                        e.setTargetGain(BOOST_GAINS[next])
+                                        e.enabled = next > 0
+                                        boost = next
+                                        hud = Hud(Icons.Rounded.VolumeUp, "Boost ${BOOST_LABELS[next]}")
+                                    } catch (e: Exception) {
+                                        hud = Hud(null, "Boost isn't supported here")
+                                    }
+                                },
+                            )
+                            add(
+                                MoreItem("Subtitle size: ${SUBTITLE_LABELS[subtitleSize]}") {
+                                    subtitleSize = (subtitleSize + 1) % SUBTITLE_LABELS.size
+                                    hud = Hud(Icons.Rounded.Subtitles, SUBTITLE_LABELS[subtitleSize])
+                                },
+                            )
+                            add(MoreItem("Picture in picture") { onPip() })
+                            add(MoreItem("Video info") { showInfo = true })
+                            add(MoreItem("Share") { onShare() })
+                            if (state.isLocal) add(MoreItem("Delete") { confirmDelete = true })
+                        },
                     )
                 }
             }
@@ -381,6 +530,61 @@ fun PlayerScreen(
                     state = state,
                     onDismiss = { showTracks = false },
                     onAddSubtitle = onAddSubtitle,
+                )
+            }
+
+            if (showSleep) {
+                Dialog(onDismissRequest = { showSleep = false }) {
+                    Column(
+                        Modifier
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(vertical = 16.dp),
+                    ) {
+                        SectionLabel("Sleep timer", Icons.Rounded.Pause)
+                        SLEEP_CHOICES.forEach { minutes ->
+                            ChoiceRow(
+                                label = if (minutes == 0) "Off" else "$minutes minutes",
+                                selected = minutes == sleepMinutes,
+                            ) {
+                                sleepMinutes = minutes
+                                showSleep = false
+                                if (minutes > 0) hud = Hud(null, "Pausing in $minutes min")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showInfo) {
+                val lines = remember(state.revision, showInfo) { infoLines(state.tracks, fileInfo()) }
+                AlertDialog(
+                    onDismissRequest = { showInfo = false },
+                    title = { Text("Video info") },
+                    text = {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            lines.forEach { (name, value) ->
+                                Text(name, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                Text(value, modifier = Modifier.padding(bottom = 10.dp))
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { showInfo = false }) { Text("Close") } },
+                )
+            }
+
+            if (confirmDelete) {
+                AlertDialog(
+                    onDismissRequest = { confirmDelete = false },
+                    title = { Text("Delete this video?") },
+                    text = { Text("\"${state.title}\" will be deleted from your phone.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            confirmDelete = false
+                            onDelete()
+                        }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    },
+                    dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
                 )
             }
         }
@@ -449,8 +653,11 @@ private fun Controls(
     onInteract: () -> Unit,
     onSeek: (Long) -> Unit,
     onSeekBy: (Long) -> Unit,
+    seekStepSec: Int,
+    moreItems: List<MoreItem>,
 ) {
     var speedMenu by remember { mutableStateOf(false) }
+    var moreMenu by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableStateOf<Float?>(null) }
 
     Box(Modifier.fillMaxSize()) {
@@ -512,9 +719,25 @@ private fun Controls(
                 }
             }
             Spacer(Modifier.width(8.dp))
-            GlassButton(Icons.Rounded.PictureInPictureAlt, "Picture in picture") { onPip() }
-            Spacer(Modifier.width(8.dp))
             GlassButton(Icons.Rounded.ScreenRotation, "Rotate") { onRotate() }
+            Spacer(Modifier.width(8.dp))
+            Box {
+                GlassButton(Icons.Rounded.MoreVert, "More") {
+                    moreMenu = true
+                    onInteract()
+                }
+                DropdownMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                    moreItems.forEach { item ->
+                        DropdownMenuItem(
+                            text = { Text(item.label) },
+                            onClick = {
+                                moreMenu = false
+                                item.action()
+                            },
+                        )
+                    }
+                }
+            }
         }
 
         // Bottom bar
@@ -572,8 +795,11 @@ private fun Controls(
                         if (state.hasPrevious) player.seekToPreviousMediaItem()
                     }
                 }
-                GlassButton(Icons.Rounded.Replay10, "Back 10 seconds") {
-                    onSeekBy(-10_000L)
+                GlassButton(
+                    if (seekStepSec == 10) Icons.Rounded.Replay10 else Icons.Rounded.Replay,
+                    "Back $seekStepSec seconds",
+                ) {
+                    onSeekBy(-seekStepSec * 1000L)
                     onInteract()
                 }
                 Box(
@@ -599,8 +825,11 @@ private fun Controls(
                         modifier = Modifier.size(36.dp),
                     )
                 }
-                GlassButton(Icons.Rounded.Forward10, "Forward 10 seconds") {
-                    onSeekBy(10_000L)
+                GlassButton(
+                    if (seekStepSec == 10) Icons.Rounded.Forward10 else Icons.Rounded.FastForward,
+                    "Forward $seekStepSec seconds",
+                ) {
+                    onSeekBy(seekStepSec * 1000L)
                     onInteract()
                 }
                 Box(Modifier.alpha(if (state.hasNext) 1f else 0.35f)) {
@@ -612,6 +841,32 @@ private fun Controls(
             }
         }
     }
+}
+
+private fun infoLines(tracks: Tracks, file: List<Pair<String, String>>): List<Pair<String, String>> {
+    val lines = ArrayList<Pair<String, String>>(file)
+    for (group in tracks.groups) {
+        if (!group.isSelected) continue
+        for (i in 0 until group.length) {
+            if (!group.isTrackSelected(i)) continue
+            val f = group.getTrackFormat(i)
+            if (group.type == C.TRACK_TYPE_VIDEO) {
+                lines += "Video" to buildList {
+                    if (f.width > 0 && f.height > 0) add("${f.width} x ${f.height}")
+                    (f.codecs ?: f.sampleMimeType)?.let { add(it) }
+                    if (f.frameRate > 0f) add("%.0f fps".format(f.frameRate))
+                    if (f.bitrate > 0) add("%.1f Mbps".format(f.bitrate / 1_000_000f))
+                }.joinToString(" · ")
+            } else if (group.type == C.TRACK_TYPE_AUDIO) {
+                lines += "Audio" to buildList {
+                    (f.codecs ?: f.sampleMimeType)?.let { add(it) }
+                    if (f.channelCount > 0) add("${f.channelCount} ch")
+                    if (f.sampleRate > 0) add("${f.sampleRate} Hz")
+                }.joinToString(" · ")
+            }
+        }
+    }
+    return lines
 }
 
 private data class TrackChoice(val label: String, val group: Tracks.Group, val index: Int, val selected: Boolean)

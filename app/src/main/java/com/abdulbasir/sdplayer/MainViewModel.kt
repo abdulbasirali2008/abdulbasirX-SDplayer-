@@ -1,6 +1,10 @@
 package com.abdulbasir.sdplayer
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.abdulbasir.sdplayer.data.SortMode
@@ -34,6 +38,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun load() {
         if (_loading.value) return
+        val permission = if (Build.VERSION.SDK_INT >= 33) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (ContextCompat.checkSelfPermission(getApplication(), permission) != PackageManager.PERMISSION_GRANTED) return
         viewModelScope.launch {
             _loading.value = true
             try {

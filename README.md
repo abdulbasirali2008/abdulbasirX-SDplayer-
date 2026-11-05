@@ -17,6 +17,10 @@ A clean, fast video player for Android, made by **ABDUL BASIR**.
 - **Picture in picture**
 - Opens videos from file managers and other apps, and plays direct links (including .m3u8)
 - Playlist of the folder or list you started from, with next and previous
+- Pinch to **zoom**, **sleep timer**, **A-B repeat**, and **audio boost** (louder than the system maximum)
+- Subtitle size, **video info** (codec, resolution, bitrate), **share** and **delete**
+- **Settings**: default speed, skip length, gestures on/off, auto rotate, auto picture in picture
+- List or **grid** view, and a history of the links you played
 
 ## Get the app
 

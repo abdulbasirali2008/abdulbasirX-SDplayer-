@@ -27,6 +27,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
@@ -80,6 +84,7 @@ import com.abdulbasir.sdplayer.MainViewModel
 import com.abdulbasir.sdplayer.PlayerActivity
 import com.abdulbasir.sdplayer.data.PlayQueue
 import com.abdulbasir.sdplayer.data.SortMode
+import com.abdulbasir.sdplayer.data.Store
 import com.abdulbasir.sdplayer.data.ThumbLoader
 import com.abdulbasir.sdplayer.data.Video
 import com.abdulbasir.sdplayer.data.VideoFolder
@@ -121,15 +126,18 @@ fun HomeApp(vm: MainViewModel) {
     var query by rememberSaveable { mutableStateOf("") }
     var showStream by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    val store = remember { Store(context) }
+    var grid by remember { mutableStateOf(store.grid) }
 
-    BackHandler(enabled = openFolder != null) { openFolder = null }
+    BackHandler(enabled = openFolder != null && !showSettings) { openFolder = null }
 
     fun play(list: List<Video>, index: Int) {
         PlayQueue.set(list, index)
         context.startActivity(Intent(context, PlayerActivity::class.java))
     }
 
-    Column(
+    if (showSettings) SettingsScreen(onBack = { showSettings = false }) else Column(
         Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -168,13 +176,28 @@ fun HomeApp(vm: MainViewModel) {
             RoundButton(Icons.Rounded.Link, "Play from link") { showStream = true }
             Spacer(Modifier.width(8.dp))
             Box {
-                RoundButton(Icons.Rounded.Sort, "Sort") { sortMenu = true }
+                RoundButton(Icons.Rounded.MoreVert, "Menu") { sortMenu = true }
                 DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (grid) "List view" else "Grid view") },
+                        onClick = {
+                            grid = !grid
+                            store.grid = grid
+                            sortMenu = false
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Settings") },
+                        onClick = {
+                            sortMenu = false
+                            showSettings = true
+                        },
+                    )
                     SortMode.entries.forEach { mode ->
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    mode.label,
+                                    "Sort: ${mode.label}",
                                     color = if (mode == sort) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                     fontWeight = if (mode == sort) FontWeight.Bold else FontWeight.Normal,
                                 )
@@ -296,13 +319,31 @@ fun HomeApp(vm: MainViewModel) {
                         if (needle.isNotEmpty()) "No video matches \"$needle\"." else "Videos you watch will appear here.",
                     )
                 } else {
-                    LazyColumn(Modifier.fillMaxSize().navigationBarsPadding(), contentPadding = bottomPad) {
-                        items(shown, key = { it.id }) { video ->
-                            VideoRow(
-                                video = video,
-                                watched = positions[video.id] ?: 0L,
-                                onClick = { play(shown, shown.indexOf(video)) },
-                            )
+                    if (grid) {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(160.dp),
+                            modifier = Modifier.fillMaxSize().navigationBarsPadding(),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            gridItems(shown, key = { it.id }) { video ->
+                                VideoCard(
+                                    video = video,
+                                    watched = positions[video.id] ?: 0L,
+                                    onClick = { play(shown, shown.indexOf(video)) },
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(Modifier.fillMaxSize().navigationBarsPadding(), contentPadding = bottomPad) {
+                            items(shown, key = { it.id }) { video ->
+                                VideoRow(
+                                    video = video,
+                                    watched = positions[video.id] ?: 0L,
+                                    onClick = { play(shown, shown.indexOf(video)) },
+                                )
+                            }
                         }
                     }
                 }
@@ -331,9 +372,11 @@ fun HomeApp(vm: MainViewModel) {
 
     if (showStream) {
         StreamDialog(
+            recent = remember { store.links() },
             onDismiss = { showStream = false },
             onPlay = { url ->
                 showStream = false
+                store.addLink(url)
                 context.startActivity(
                     Intent(context, PlayerActivity::class.java).apply {
                         action = Intent.ACTION_VIEW
@@ -465,6 +508,62 @@ private fun VideoRow(video: Video, watched: Long, onClick: () -> Unit) {
 }
 
 @Composable
+private fun VideoCard(video: Video, watched: Long, onClick: () -> Unit) {
+    Column(Modifier.clickable(onClick = onClick)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(14.dp)),
+        ) {
+            Thumb(video, Modifier.fillMaxSize())
+            Text(
+                text = formatTime(video.durationMs),
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+            if (watched > 0L && video.durationMs > 0L) {
+                val fraction = (watched.toFloat() / video.durationMs).coerceIn(0f, 1f)
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(Color.White.copy(alpha = 0.25f)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(fraction)
+                            .height(3.dp)
+                            .background(MaterialTheme.colorScheme.primary),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = video.title,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = listOf(formatSize(video.size), qualityLabel(video.width, video.height)).filter { it.isNotEmpty() }.joinToString(" · "),
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
 private fun FolderRow(folder: VideoFolder, onClick: () -> Unit) {
     Row(
         Modifier
@@ -518,7 +617,7 @@ private fun Message(title: String, body: String, action: @Composable (() -> Unit
 }
 
 @Composable
-private fun StreamDialog(onDismiss: () -> Unit, onPlay: (String) -> Unit) {
+private fun StreamDialog(recent: List<String>, onDismiss: () -> Unit, onPlay: (String) -> Unit) {
     var url by remember { mutableStateOf("") }
     val valid = url.trim().startsWith("http://") || url.trim().startsWith("https://")
     AlertDialog(
@@ -538,6 +637,23 @@ private fun StreamDialog(onDismiss: () -> Unit, onPlay: (String) -> Unit) {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (recent.isNotEmpty()) {
+                    Spacer(Modifier.height(14.dp))
+                    Text("Recent links", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    recent.take(5).forEach { link ->
+                        Text(
+                            text = link,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPlay(link) }
+                                .padding(vertical = 8.dp),
+                        )
+                    }
+                }
             }
         },
         confirmButton = {

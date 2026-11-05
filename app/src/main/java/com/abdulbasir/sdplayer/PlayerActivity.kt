@@ -1,17 +1,22 @@
 package com.abdulbasir.sdplayer
 
 import android.app.PictureInPictureParams
+import android.app.RecoverableSecurityException
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.widget.Toast
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -30,6 +35,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import com.abdulbasir.sdplayer.data.PlayQueue
 import com.abdulbasir.sdplayer.data.Store
 import com.abdulbasir.sdplayer.data.Video
+import com.abdulbasir.sdplayer.data.PlayerSettings
+import com.abdulbasir.sdplayer.ui.formatSize
+import com.abdulbasir.sdplayer.ui.formatTime
 import com.abdulbasir.sdplayer.ui.PlayerScreen
 import com.abdulbasir.sdplayer.ui.SDTheme
 
@@ -38,10 +46,28 @@ class PlayerActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     private lateinit var store: Store
     private var inPip by mutableStateOf(false)
+    private lateinit var settings: PlayerSettings
+    private var pendingDelete: Uri? = null
+
+    private val deleteLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val uri = pendingDelete
+            if (uri != null && Build.VERSION.SDK_INT < 30) {
+                try {
+                    contentResolver.delete(uri, null, null)
+                } catch (e: Exception) {
+                    // Nothing more to do; the file may already be gone.
+                }
+            }
+            onDeleted()
+        }
+        pendingDelete = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = Store(this)
+        settings = store.playerSettings()
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -95,7 +121,7 @@ class PlayerActivity : ComponentActivity() {
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
-                if (videoSize.width > 0 && videoSize.height > 0) {
+                if (settings.autoRotate && videoSize.width > 0 && videoSize.height > 0) {
                     requestedOrientation = if (videoSize.width >= videoSize.height) {
                         ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                     } else {
@@ -106,7 +132,12 @@ class PlayerActivity : ComponentActivity() {
         })
 
         val firstId = items[start].mediaId.toLongOrNull()
-        val resumeAt = firstId?.let { store.position(it) }?.takeIf { it > 3_000L } ?: C.TIME_UNSET
+        val resumeAt = if (settings.resume) {
+            firstId?.let { store.position(it) }?.takeIf { it > 3_000L } ?: C.TIME_UNSET
+        } else {
+            C.TIME_UNSET
+        }
+        exo.setPlaybackSpeed(settings.speed)
         firstId?.let { store.addRecent(it) }
 
         exo.setMediaItems(items, start, resumeAt)
@@ -118,6 +149,11 @@ class PlayerActivity : ComponentActivity() {
                 PlayerScreen(
                     player = exo,
                     inPip = inPip,
+                    settings = settings,
+                    audioSessionId = { exo.audioSessionId },
+                    fileInfo = { fileInfo() },
+                    onShare = { shareCurrent() },
+                    onDelete = { deleteCurrent() },
                     onBack = { finish() },
                     onPip = { enterPip() },
                     onRotate = { toggleOrientation() },
@@ -204,6 +240,68 @@ class PlayerActivity : ComponentActivity() {
         window.attributes = attrs
     }
 
+    private fun fileInfo(): List<Pair<String, String>> {
+        val item = player?.currentMediaItem ?: return emptyList()
+        val video = item.mediaId.toLongOrNull()?.let { id -> PlayQueue.items.firstOrNull { it.id == id } }
+        return if (video != null) {
+            listOf(
+                "Name" to video.title,
+                "Folder" to video.folder,
+                "Size" to formatSize(video.size),
+                "Duration" to formatTime(video.durationMs),
+            )
+        } else {
+            listOf("Source" to (item.localConfiguration?.uri?.toString() ?: ""))
+        }
+    }
+
+    private fun shareCurrent() {
+        val uri = player?.currentMediaItem?.localConfiguration?.uri ?: return
+        val send = Intent(Intent.ACTION_SEND)
+        if (uri.scheme == "http" || uri.scheme == "https") {
+            send.type = "text/plain"
+            send.putExtra(Intent.EXTRA_TEXT, uri.toString())
+        } else {
+            send.type = "video/*"
+            send.putExtra(Intent.EXTRA_STREAM, uri)
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(send, "Share video"))
+    }
+
+    private fun deleteCurrent() {
+        val uri = player?.currentMediaItem?.localConfiguration?.uri ?: return
+        pendingDelete = uri
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                val request = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
+                deleteLauncher.launch(IntentSenderRequest.Builder(request.intentSender).build())
+            } else if (contentResolver.delete(uri, null, null) > 0) {
+                onDeleted()
+            } else {
+                Toast.makeText(this, "Can't delete this video", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: SecurityException) {
+            if (Build.VERSION.SDK_INT >= 29 && e is RecoverableSecurityException) {
+                deleteLauncher.launch(IntentSenderRequest.Builder(e.userAction.actionIntent.intentSender).build())
+            } else {
+                Toast.makeText(this, "Can't delete this video", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Can't delete this video", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun onDeleted() {
+        val exo = player
+        if (exo != null && exo.mediaItemCount > 1) {
+            exo.removeMediaItem(exo.currentMediaItemIndex)
+            Toast.makeText(this, "Video deleted", Toast.LENGTH_SHORT).show()
+        } else {
+            finish()
+        }
+    }
+
     private fun enterPip() {
         if (Build.VERSION.SDK_INT < 26) return
         val size = player?.videoSize
@@ -249,7 +347,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (player?.isPlaying == true) enterPip()
+        if (settings.autoPip && player?.isPlaying == true) enterPip()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
