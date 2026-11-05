@@ -11,6 +11,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -537,8 +538,7 @@ fun PlayerScreen(
                 Dialog(onDismissRequest = { showSleep = false }) {
                     Column(
                         Modifier
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(MaterialTheme.colorScheme.surface)
+                            .glass(RoundedCornerShape(28.dp), fill = 0.88f)
                             .padding(vertical = 16.dp),
                     ) {
                         SectionLabel("Sleep timer", Icons.Rounded.Pause)
@@ -598,9 +598,8 @@ private fun formatSpeed(speed: Float): String =
 private fun HudView(hud: Hud, modifier: Modifier) {
     Column(
         modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.Black.copy(alpha = 0.6f))
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .glass(RoundedCornerShape(26.dp), fill = 0.55f)
+            .padding(horizontal = 26.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (hud.icon != null) {
@@ -628,8 +627,7 @@ private fun GlassButton(icon: ImageVector, description: String, size: Int = 44, 
     Box(
         Modifier
             .size(size.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.16f))
+            .glass(CircleShape, fill = 0.30f)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -666,9 +664,10 @@ private fun Controls(
             Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)))
                 .windowInsetsPadding(WindowInsets.displayCutout)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .glass(RoundedCornerShape(32.dp), fill = 0.42f)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GlassButton(Icons.Rounded.ArrowBack, "Back") { onBack() }
@@ -689,8 +688,7 @@ private fun Controls(
                 Box(
                     Modifier
                         .height(44.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.16f))
+                        .glass(CircleShape, fill = 0.30f)
                         .clickable {
                             speedMenu = true
                             onInteract()
@@ -745,9 +743,10 @@ private fun Controls(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))))
                 .windowInsetsPadding(WindowInsets.displayCutout)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .glass(RoundedCornerShape(34.dp), fill = 0.42f)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             val max = state.duration.coerceAtLeast(1L).toFloat()
             val shown = dragPosition ?: state.position.toFloat()
@@ -806,7 +805,8 @@ private fun Controls(
                     Modifier
                         .size(64.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(Brush.verticalGradient(listOf(Accent, AccentAlt.copy(alpha = 0.9f))))
+                        .border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape)
                         .clickable {
                             if (player.isPlaying) {
                                 player.pause()
@@ -923,8 +923,7 @@ private fun TracksDialog(
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier
-                .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surface)
+                .glass(RoundedCornerShape(28.dp), fill = 0.88f)
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 16.dp),
         ) {

@@ -12,8 +12,8 @@ android {
         applicationId = "com.abdulbasir.sdplayer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     // A fixed debug key, so every build is signed the same way and a new APK

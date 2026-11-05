@@ -4,6 +4,8 @@ A clean, fast video player for Android, made by **ABDUL BASIR**.
 
 ## Features
 
+- iPhone-style **liquid glass** design: frosted, translucent panels with a glowing background
+
 - Finds every video on your phone, with previews, duration and quality tags
 - Browse by **Videos**, **Folders** or **Recent**, with search and sorting
 - Plays almost any format (MP4, MKV, WebM, AVI, MOV, HLS…) using Media3 / ExoPlayer

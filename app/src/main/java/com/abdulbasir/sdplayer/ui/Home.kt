@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -140,7 +141,7 @@ fun HomeApp(vm: MainViewModel) {
     if (showSettings) SettingsScreen(onBack = { showSettings = false }) else Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .aurora()
             .statusBarsPadding(),
     ) {
         // Header
@@ -217,8 +218,7 @@ fun HomeApp(vm: MainViewModel) {
             Modifier
                 .padding(horizontal = 16.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .glass(RoundedCornerShape(20.dp)),
         ) {
             TextField(
                 value = query,
@@ -244,8 +244,7 @@ fun HomeApp(vm: MainViewModel) {
                 Modifier
                     .padding(horizontal = 16.dp, vertical = 12.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surface)
+                    .glass(RoundedCornerShape(22.dp), fill = 0.5f)
                     .padding(4.dp),
             ) {
                 HomeTab.entries.forEachIndexed { index, tab ->
@@ -253,8 +252,16 @@ fun HomeApp(vm: MainViewModel) {
                     Row(
                         Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                            .clip(RoundedCornerShape(18.dp))
+                            .then(
+                                if (selected) {
+                                    Modifier
+                                        .background(Brush.verticalGradient(listOf(Accent.copy(alpha = 0.95f), Accent.copy(alpha = 0.7f))))
+                                        .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .clickable { tabIndex = index }
                             .padding(vertical = 9.dp),
                         horizontalArrangement = Arrangement.Center,
@@ -394,7 +401,8 @@ private fun Logo() {
         Modifier
             .size(44.dp)
             .clip(RoundedCornerShape(13.dp))
-            .background(Brush.linearGradient(listOf(Accent, AccentAlt))),
+            .background(Brush.linearGradient(listOf(Accent, AccentAlt)))
+            .border(1.dp, Color.White.copy(alpha = 0.45f), RoundedCornerShape(13.dp)),
         contentAlignment = Alignment.Center,
     ) {
         Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
@@ -406,8 +414,7 @@ private fun RoundButton(icon: ImageVector, description: String, onClick: () -> U
     Box(
         Modifier
             .size(44.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .glass(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -439,8 +446,10 @@ private fun VideoRow(video: Video, watched: Long, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .glass(RoundedCornerShape(22.dp), fill = 0.36f)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -509,7 +518,12 @@ private fun VideoRow(video: Video, watched: Long, onClick: () -> Unit) {
 
 @Composable
 private fun VideoCard(video: Video, watched: Long, onClick: () -> Unit) {
-    Column(Modifier.clickable(onClick = onClick)) {
+    Column(
+        Modifier
+            .glass(RoundedCornerShape(22.dp), fill = 0.36f)
+            .clickable(onClick = onClick)
+            .padding(8.dp),
+    ) {
         Box(
             Modifier
                 .fillMaxWidth()
@@ -568,15 +582,16 @@ private fun FolderRow(folder: VideoFolder, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .glass(RoundedCornerShape(22.dp), fill = 0.36f)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
                 .size(52.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .glass(RoundedCornerShape(16.dp), fill = 0.5f),
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Rounded.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -622,6 +637,8 @@ private fun StreamDialog(recent: List<String>, onDismiss: () -> Unit, onPlay: (S
     val valid = url.trim().startsWith("http://") || url.trim().startsWith("https://")
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1C1C1E).copy(alpha = 0.94f),
+        shape = RoundedCornerShape(28.dp),
         title = { Text("Play from link") },
         text = {
             Column {

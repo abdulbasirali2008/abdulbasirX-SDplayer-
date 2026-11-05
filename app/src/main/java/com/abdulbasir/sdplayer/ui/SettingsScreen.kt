@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -59,7 +60,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .aurora()
             .statusBarsPadding(),
     ) {
         Row(
@@ -69,8 +70,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             Box(
                 Modifier
                     .size(44.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .glass(CircleShape)
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
@@ -123,7 +123,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             Header("About")
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Text("SD Player 1.1.0", fontWeight = FontWeight.SemiBold)
+                Text("SD Player 1.2.0", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text("Made by ABDUL BASIR", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("MIT License", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -151,8 +151,10 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
     Row(
         Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .glass(RoundedCornerShape(20.dp), fill = 0.36f)
             .clickable { onChange(!checked) }
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -168,8 +170,10 @@ private fun ChoiceRow(title: String, value: String, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .glass(RoundedCornerShape(20.dp), fill = 0.36f)
             .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, fontSize = 16.sp, modifier = Modifier.weight(1f))
