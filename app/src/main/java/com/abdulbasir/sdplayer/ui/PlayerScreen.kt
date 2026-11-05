@@ -257,10 +257,50 @@ fun PlayerScreen(
     val audio = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val maxVolume = remember { audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
 
+    // Some files (often .mkv rips) have no seek index, so a jump just restarts the video.
+    // We notice that, and fast-forward silently to the spot instead.
+    var checkSeek by remember { mutableStateOf<Long?>(null) }
+    var fastForwardTo by remember { mutableStateOf<Long?>(null) }
+
+    fun doSeek(target: Long) {
+        val t = target.coerceAtLeast(0L)
+        fastForwardTo = null
+        player.seekTo(t)
+        if (t > 4_000L) checkSeek = t
+    }
+
     fun seekBy(deltaMs: Long) {
         val target = (player.currentPosition + deltaMs).coerceAtLeast(0L)
         val limit = if (player.duration == C.TIME_UNSET) target else player.duration
-        player.seekTo(target.coerceAtMost(limit))
+        doSeek(target.coerceAtMost(limit))
+    }
+
+    LaunchedEffect(checkSeek) {
+        val target = checkSeek ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(900)
+        checkSeek = null
+        // The seek went to the target but we are back at the start: the file can't be seeked.
+        if (player.currentPosition < 1_500L && target > 4_000L) fastForwardTo = target
+    }
+
+    LaunchedEffect(fastForwardTo) {
+        val target = fastForwardTo ?: return@LaunchedEffect
+        val oldSpeed = player.playbackParameters.speed
+        val oldVolume = player.volume
+        try {
+            player.volume = 0f
+            player.setPlaybackSpeed(16f)
+            player.play()
+            while (player.currentPosition < target - 600L && player.playbackState != Player.STATE_ENDED) {
+                val percent = (player.currentPosition * 100 / target).coerceIn(0L, 100L)
+                hud = Hud(Icons.Rounded.FastForward, "Jumping… $percent%")
+                kotlinx.coroutines.delay(150)
+            }
+        } finally {
+            player.setPlaybackSpeed(oldSpeed)
+            player.volume = oldVolume
+            if (fastForwardTo == target) fastForwardTo = null
+        }
     }
 
     Box(
@@ -354,7 +394,7 @@ fun PlayerScreen(
                                 volume = audio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
                             },
                             onDragEnd = {
-                                if (mode == 1) player.seekTo(seekTarget)
+                                if (mode == 1) doSeek(seekTarget)
                                 mode = 0
                             },
                             onDragCancel = { mode = 0 },
@@ -455,9 +495,7 @@ fun PlayerScreen(
                             player.repeatMode = if (state.repeatOne) Player.REPEAT_MODE_OFF else Player.REPEAT_MODE_ONE
                         },
                         onInteract = { interaction++ },
-                        onSeek = { target ->
-                            player.seekTo(target)
-                        },
+                        onSeek = { target -> doSeek(target) },
                         onSeekBy = { seekBy(it) },
                         seekStepSec = settings.seekStepSec,
                         moreItems = buildList {
@@ -636,6 +674,11 @@ private fun GlassButton(icon: ImageVector, description: String, size: Int = 44, 
 }
 
 @Composable
+private fun SmallGlassButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    GlassButton(icon, description, size = 36, onClick = onClick)
+}
+
+@Composable
 private fun Controls(
     state: PlayerUiState,
     player: Player,
@@ -744,9 +787,9 @@ private fun Controls(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.displayCutout)
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-                .glass(RoundedCornerShape(34.dp), fill = 0.42f)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 24.dp, vertical = 8.dp)
+                .glass(RoundedCornerShape(26.dp), fill = 0.42f)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
         ) {
             val max = state.duration.coerceAtLeast(1L).toFloat()
             val shown = dragPosition ?: state.position.toFloat()
@@ -778,23 +821,23 @@ private fun Controls(
                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
                 )
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(0.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                GlassButton(Icons.Rounded.Lock, "Lock controls") { onLock() }
-                GlassButton(
+                SmallGlassButton(Icons.Rounded.Lock, "Lock controls") { onLock() }
+                SmallGlassButton(
                     if (state.repeatOne) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                     "Repeat",
                 ) { onToggleRepeat() }
                 Box(Modifier.alpha(if (state.hasPrevious) 1f else 0.35f)) {
-                    GlassButton(Icons.Rounded.SkipPrevious, "Previous") {
+                    SmallGlassButton(Icons.Rounded.SkipPrevious, "Previous") {
                         if (state.hasPrevious) player.seekToPreviousMediaItem()
                     }
                 }
-                GlassButton(
+                SmallGlassButton(
                     if (seekStepSec == 10) Icons.Rounded.Replay10 else Icons.Rounded.Replay,
                     "Back $seekStepSec seconds",
                 ) {
@@ -803,7 +846,7 @@ private fun Controls(
                 }
                 Box(
                     Modifier
-                        .size(64.dp)
+                        .size(50.dp)
                         .clip(CircleShape)
                         .background(Brush.verticalGradient(listOf(Accent, AccentAlt.copy(alpha = 0.9f))))
                         .border(1.dp, Color.White.copy(alpha = 0.45f), CircleShape)
@@ -822,10 +865,10 @@ private fun Controls(
                         if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (state.isPlaying) "Pause" else "Play",
                         tint = Color.White,
-                        modifier = Modifier.size(36.dp),
+                        modifier = Modifier.size(28.dp),
                     )
                 }
-                GlassButton(
+                SmallGlassButton(
                     if (seekStepSec == 10) Icons.Rounded.Forward10 else Icons.Rounded.FastForward,
                     "Forward $seekStepSec seconds",
                 ) {
@@ -833,11 +876,11 @@ private fun Controls(
                     onInteract()
                 }
                 Box(Modifier.alpha(if (state.hasNext) 1f else 0.35f)) {
-                    GlassButton(Icons.Rounded.SkipNext, "Next") {
+                    SmallGlassButton(Icons.Rounded.SkipNext, "Next") {
                         if (state.hasNext) player.seekToNextMediaItem()
                     }
                 }
-                GlassButton(Icons.Rounded.AspectRatio, "Screen fit: ${fit.label}") { onFit() }
+                SmallGlassButton(Icons.Rounded.AspectRatio, "Screen fit: ${fit.label}") { onFit() }
             }
         }
     }
