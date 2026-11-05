@@ -1,0 +1,17 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+keystore.properties
+*.jks
+*.keystore
+
+# fixed debug key, needed so builds install over each other
+!app/debug.keystore
