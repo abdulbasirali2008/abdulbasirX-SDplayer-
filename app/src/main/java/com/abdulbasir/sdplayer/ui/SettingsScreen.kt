@@ -123,7 +123,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             Header("About")
             Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                Text("SD Player 1.2.1", fontWeight = FontWeight.SemiBold)
+                Text("SD Player 1.2.2", fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text("Made by ABDUL BASIR", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("MIT License", color = MaterialTheme.colorScheme.onSurfaceVariant)

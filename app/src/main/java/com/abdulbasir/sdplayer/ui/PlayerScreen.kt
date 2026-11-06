@@ -781,6 +781,24 @@ private fun Controls(
             }
         }
 
+        // Lock and screen fit sit on the sides of the picture, out of the bottom bar.
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .windowInsetsPadding(WindowInsets.displayCutout)
+                .padding(start = 20.dp),
+        ) {
+            GlassButton(Icons.Rounded.Lock, "Lock controls", size = 48) { onLock() }
+        }
+        Box(
+            Modifier
+                .align(Alignment.CenterEnd)
+                .windowInsetsPadding(WindowInsets.displayCutout)
+                .padding(end = 20.dp),
+        ) {
+            GlassButton(Icons.Rounded.AspectRatio, "Screen fit: ${fit.label}", size = 48) { onFit() }
+        }
+
         // Bottom bar
         Column(
             Modifier
@@ -827,7 +845,6 @@ private fun Controls(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SmallGlassButton(Icons.Rounded.Lock, "Lock controls") { onLock() }
                 SmallGlassButton(
                     if (state.repeatOne) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                     "Repeat",
@@ -880,7 +897,6 @@ private fun Controls(
                         if (state.hasNext) player.seekToNextMediaItem()
                     }
                 }
-                SmallGlassButton(Icons.Rounded.AspectRatio, "Screen fit: ${fit.label}") { onFit() }
             }
         }
     }
